@@ -1,29 +1,33 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using SmsSender.Common.RabbitMQ;
+using SmsSender.Common.RabbitMQ.Interfaces;
 using SmsSender.EmailService.DTO;
 using System.Reflection;
 
-var builder = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration((context, config) =>
-    {
-        var environment = context.HostingEnvironment;
+var services = new ServiceCollection();
+var configurationBuilder = new ConfigurationBuilder();
+var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+string path = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
 
-        config.SetBasePath(environment.ContentRootPath)
-              .AddJsonFile("appsettings.json", false, true)
-              .AddJsonFile($"appsettings.{environment.EnvironmentName}.json", true)
-              .AddEnvironmentVariables()
-              .AddUserSecrets(Assembly.GetExecutingAssembly());
-    });
-IHost host = builder.ConfigureServices((context, services) =>
-    services.ConfigureRabbit(context.Configuration))
-.Build();
+configurationBuilder.SetBasePath(path)
+      .AddJsonFile("appsettings.json", false, true)
+      .AddJsonFile($"appsettings.{environmentName}.json", true)
+      .AddEnvironmentVariables()
+      .AddUserSecrets(Assembly.GetExecutingAssembly());
 
-RabbitClient client = host.Services.GetRequiredService<RabbitClient>();
+var configuration = configurationBuilder.Build();
+
+services.ConfigureRabbit(configuration);
+
+var serviceProvider = services.BuildServiceProvider();
+
+IRabbitClient client = serviceProvider.GetRequiredService<IRabbitClient>();
 
 client.Subscribe<EmailNotificationMessage>((message, model, ea) =>
 {
-    Console.WriteLine($"email to: {message.Email} message: {message.Content}");
+    Console.WriteLine($"email to: {message.Email} message: {message.Content} {Environment.NewLine}");
 }, "email_notification");
 
+var resetEvent = new ManualResetEventSlim();
+resetEvent.Wait();
